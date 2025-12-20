@@ -55,22 +55,35 @@ Movie.init(
     imdbId: {
       type: DataTypes.STRING,
       allowNull: false,
+      validate: {
+        notEmpty: true,
+      },
     },
     title: {
-      type: DataTypes.STRING(500), // Movies can have long titles
+      type: DataTypes.STRING(500),
       allowNull: false,
+      validate: {
+        notEmpty: true,
+      },
     },
     year: {
       type: DataTypes.INTEGER,
       allowNull: false,
+      validate: {
+        isInt: true,
+        min: 1888, // The first movie ever made
+      },
     },
     rated: {
       type: DataTypes.STRING,
       allowNull: true,
     },
     released: {
-      type: DataTypes.STRING, // Use DataTypes.DATEONLY if format is YYYY-MM-DD
+      type: DataTypes.STRING,
       allowNull: false,
+      validate: {
+        notEmpty: true,
+      },
     },
     runtime: {
       type: DataTypes.STRING,
@@ -95,14 +108,25 @@ Movie.init(
     plot: {
       type: DataTypes.TEXT,
       allowNull: false,
+      validate: {
+        notEmpty: true,
+      },
     },
     poster: {
-      type: DataTypes.STRING(1000), // URLs can be very long
+      type: DataTypes.STRING(1000),
       allowNull: false,
+      validate: {
+        isUrl: true,
+      },
     },
     imdbRating: {
-      type: DataTypes.DECIMAL(3, 1), // Allows ratings like 8.5
+      type: DataTypes.DECIMAL(3, 1),
       allowNull: true,
+      validate: {
+        isDecimal: true,
+        min: 0,
+        max: 10,
+      },
     },
     boxOffice: {
       type: DataTypes.STRING,

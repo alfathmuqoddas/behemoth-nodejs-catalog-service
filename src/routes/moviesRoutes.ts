@@ -1,19 +1,20 @@
 import { Router } from "express";
-import { getAllMovies, getMovieById } from "../controllers/movieController";
 import {
+  getAllMovies,
+  getMovieById,
   createMovie,
-  createMovieByImdbId,
   updateMovie,
   deleteMovie,
+  createMovieByImdbId,
 } from "../controllers/movieController";
 import { authMiddleware } from "../middleware/authMiddleware";
 
 const router = Router();
 
-router.get("/getMovies", getAllMovies);
-router.get("/getMovies/:id", getMovieById);
+router.get("/get", getAllMovies);
+router.get("/get/:id", getMovieById);
 router.post("/add", authMiddleware, createMovie);
-router.post("/addByImdbId", authMiddleware, createMovieByImdbId);
+router.post("/add-imdb", authMiddleware, createMovieByImdbId);
 router.put("/update/:id", authMiddleware, updateMovie);
 router.delete("/delete/:id", authMiddleware, deleteMovie);
 

@@ -1,20 +1,26 @@
 # Node.js Movie Catalog Service
 
-This is a simple crud movie catalog service built with Node.js, Express, and Sequelize, using TypeScript. User with certain roles(admin) will be able to create, update, and delete movie catalog entries. While all users able to view the catalog.
-The auth services is provided in a separate repo namely behemoth/nodejs-auth-service. Since the auth use asymmetric encryption, the private key is stored in the auth service and the public key is used in this service.
+This is a Twelve-Factor App compliant movie catalog service built with Node.js, Express, and Sequelize, using TypeScript. It provides a CRUD API for movies, with authentication and authorization (admin only for write operations).
+
+The service is designed to work with an external authentication service (e.g., `behemoth/nodejs-auth-service`). It uses asymmetric (RSA) encryption for JWT verification, requiring the public key from the auth service.
 
 ## Features
 
-- Movie Crud (`/api/movie/add`, `/api/movie/update/{id}`, `/api/movie/delete/{id}`)
+- **Movie Catalog:** View all movies with pagination and get details by ID.
+- **Admin CRUD:** Add, update, and delete movies (Admin only).
+- **External Integration:** Add movies automatically using IMDb IDs via the OMDB API.
+- **Monitoring:** Prometheus metrics endpoint.
+- **Twelve-Factor Compliant:** Config via environment variables, stateless processes, graceful shutdown, etc.
 
 ## Technologies Used
 
 - **Backend:** Node.js, Express.js
 - **ORM:** Sequelize
-- **Database:** SQLite (in-memory)
+- **Database:** SQLite (default), supports MySQL and PostgreSQL via config.
 - **Language:** TypeScript
-- **Authentication:** JSON Web Tokens (JWT), bcryptjs
+- **Authentication:** JWT (RS256)
 - **Monitoring:** Prometheus (prom-client)
+- **Logging:** Pino (JSON logging)
 
 ## Getting Started
 
@@ -28,7 +34,7 @@ The auth services is provided in a separate repo namely behemoth/nodejs-auth-ser
 1.  Clone the repository:
     ```bash
     git clone <repository-url>
-    cd nodejs-auth-service
+    cd nodejs-catalog-service
     ```
 2.  Install the dependencies:
     ```bash
@@ -37,39 +43,55 @@ The auth services is provided in a separate repo namely behemoth/nodejs-auth-ser
 
 ### Configuration
 
-Create a `.env` file in the root of the project and add the following environment variables.
+Create a `.env` file in the root of the project. Refer to `.env.example` for all available options.
 
-```
+```bash
 PORT=3000
+NODE_ENV=development
+DB_DIALECT=sqlite
+DB_STORAGE=:memory:
+DB_SYNC=true
+JWT_PUBLIC_KEY_PATH=keys/public.pem
+OMDB_API_KEY=your_omdb_api_key_here
 ```
 
-### Generating RSA Keys
+### Public Keys
 
-This project uses the RS256 algorithm for signing JWTs, which requires a private/public key pair. A script is provided to generate keys is in the auth service repo. You have to copy the public key to this service.
+Place the `public.pem` key from your authentication service in the `keys/` directory (or set `JWT_PUBLIC_KEY_PATH`).
 
 ## Available Scripts
 
-In the project directory, you can run the following commands:
-
 ### `npm run dev`
 
-Runs the app in development mode using `ts-node` and `nodemon`. The server will automatically restart if you make changes to the code.
+Runs the app in development mode using `nodemon`.
 
 ### `npm run build`
 
-Builds the app for production to the `dist` folder. It transpiles TypeScript to JavaScript.
+Compiles TypeScript to JavaScript in the `dist` folder.
 
 ### `npm start`
 
-Runs the compiled app in production mode. Make sure you have run `npm run build` first.
+Runs the compiled app in production mode.
 
 ## API Endpoints
 
-### Authentication
+- `GET /get?page=1&size=10` - List all movies (paginated).
+- `GET /get/:id` - Get movie details by ID.
+- `POST /add` - Manually add a movie.
+- `POST /add-imdb` - Add a movie using IMDb ID (`{"imdbId": "tt..."}`).
+- `PUT /update/:id` - Update movie details.
+- `DELETE /delete/:id` - Delete a movie.
 
 ### Monitoring
 
-- **Prometheus Metrics**
-  - **URL:** `/metrics`
-  - **Method:** `GET`
-  - **Description:** Exposes application metrics in a format that can be scraped by a Prometheus server.
+- `GET /metrics` - Prometheus metrics.
+
+## Twelve-Factor App Compliance
+
+This project adheres to the Twelve-Factor App methodology:
+
+- **Config:** All configurations are handled through environment variables.
+- **Backing Services:** Database is treated as an attached resource.
+- **Disposability:** Implements graceful shutdown handlers for `SIGTERM` and `SIGINT`.
+- **Logs:** Streams logs to `stdout` using Pino.
+- **Dev/Prod Parity:** High parity achieved via environment-based configuration.

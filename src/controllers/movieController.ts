@@ -1,10 +1,16 @@
-import { Request, Response } from "express";
+import { NextFunction, Request, Response } from "express";
 import axios from "axios";
 import Movie from "../models/Movies";
 import logger from "../config/logger";
 import { AuthRequest } from "../middleware/authMiddleware";
+import { AppError } from "../utils/AppError";
+import { moviesCreatedTotal } from "../config/metrics";
 
-export const getAllMovies = async (req: Request, res: Response) => {
+export const getAllMovies = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
   try {
     const page = parseInt(req.query.page as string) || 1;
     const size = parseInt(req.query.size as string) || 10;
@@ -18,86 +24,100 @@ export const getAllMovies = async (req: Request, res: Response) => {
     const { count, rows } = await Movie.findAndCountAll({
       limit: limit,
       offset: offset,
-      order: [["createdAt", "DESC"]], // Optional: newest first
+      order: [["createdAt", "DESC"]],
     });
 
     res.status(200).json({
       totalItems: count,
       totalPages: Math.ceil(count / limit),
-      currentPage: page,
+      currentPage: currentPage,
       pageSize: limit,
       movies: rows,
     });
   } catch (error) {
-    logger.error({ error }, "Error retrieving movies:");
-    res.status(500).json({ message: "Error retrieving movies", error });
+    logger.error({ error }, "Error retrieving movies");
+    next(error);
   }
 };
 
-export const getMovieById = async (req: Request, res: Response) => {
+export const getMovieById = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
   try {
     const { id } = req.params;
     const movie = await Movie.findByPk(id);
-    if (movie) {
-      res.status(200).json(movie);
-    } else {
-      res.status(404).json({ message: "Movie not found" });
+    if (!movie) {
+      throw new AppError(404, "Movie not found");
     }
+    res.status(200).json(movie);
   } catch (error) {
-    logger.error({ error }, `Error retrieving movie with id ${req.params.id}:`);
-    res.status(500).json({ message: "Error retrieving movie", error });
+    logger.error({ error }, `Error retrieving movie with id ${req.params.id}`);
+    next(error);
   }
 };
 
-export const createMovie = async (req: AuthRequest, res: Response) => {
+export const createMovie = async (
+  req: AuthRequest,
+  res: Response,
+  next: NextFunction
+) => {
   try {
-    // Only admin users can create movies
     if (req.user?.role !== "admin") {
-      return res
-        .status(403)
-        .json({ message: "Forbidden: Only admins can add movies" });
+      throw new AppError(403, "Forbidden: Only admins can add movies");
     }
 
     const movie = await Movie.create(req.body);
+    moviesCreatedTotal.inc({ source: "direct" });
     res.status(201).json(movie);
-  } catch (error) {
-    logger.error({ error }, "Error creating movie:");
-    res.status(500).json({ message: "Error creating movie", error });
+  } catch (error: any) {
+    logger.error({ error }, "Error creating movie");
+    if (error.name === "SequelizeValidationError") {
+      return next(
+        new AppError(400, error.errors.map((e: any) => e.message).join(", "))
+      );
+    }
+    next(error);
   }
 };
 
-export const createMovieByImdbId = async (req: AuthRequest, res: Response) => {
+export const createMovieByImdbId = async (
+  req: AuthRequest,
+  res: Response,
+  next: NextFunction
+) => {
   try {
-    // Only admin users can create movies
     if (req.user?.role !== "admin") {
-      return res
-        .status(403)
-        .json({ message: "Forbidden: Only admins can add movies" });
+      throw new AppError(403, "Forbidden: Only admins can add movies");
     }
 
     const { imdbId } = req.body;
-    if (!imdbId) {
-      logger.warn(`imdbId is required`);
-      return res.status(400).json({ message: "imdbId is required" });
-    }
+    if (!imdbId) throw new AppError(400, "imdbId is required");
 
     const existingMovie = await Movie.findOne({ where: { imdbId } });
-
-    if (existingMovie) {
-      return res
-        .status(409)
-        .json({ message: "Movie already exists in database" });
-    }
+    if (existingMovie)
+      throw new AppError(409, "Movie already exists in database");
 
     const apiKey = process.env.OMDB_API_KEY;
+    if (!apiKey) throw new AppError(500, "OMDB API Key is not configured");
+
     const url = `https://www.omdbapi.com/?apikey=${apiKey}&i=${imdbId}`;
 
-    const response = await axios.get(url);
-    const movie = response.data;
-
-    if (movie.Response === "False") {
-      return res.status(404).json({ message: `OMDB Error: ${movie.Error}` });
+    let omdbResponse;
+    try {
+      omdbResponse = await axios.get(url);
+    } catch (error) {
+      throw new AppError(
+        503,
+        "External Movie Service is temporarily unavailable"
+      );
     }
+
+    if (omdbResponse.data.Response === "False")
+      throw new AppError(404, `OMDB: ${omdbResponse.data.Error}`);
+
+    const movie = omdbResponse.data;
 
     const newMovie = await Movie.create({
       title: movie.Title,
@@ -116,20 +136,28 @@ export const createMovieByImdbId = async (req: AuthRequest, res: Response) => {
       boxOffice: movie.BoxOffice || "N/A",
     });
 
+    moviesCreatedTotal.inc({ source: "imdb" });
+
     res.status(201).json(newMovie);
-  } catch (error) {
-    logger.error({ error }, "Error creating movie by imdbId:");
-    res.status(500).json({ message: "Error creating movie", error });
+  } catch (error: any) {
+    logger.error({ error }, "Error creating movie by IMDb ID");
+    if (error.name === "SequelizeValidationError") {
+      return next(
+        new AppError(400, error.errors.map((e: any) => e.message).join(", "))
+      );
+    }
+    next(error);
   }
 };
 
-export const updateMovie = async (req: AuthRequest, res: Response) => {
+export const updateMovie = async (
+  req: AuthRequest,
+  res: Response,
+  next: NextFunction
+) => {
   try {
-    // Only admin users can update movies
     if (req.user?.role !== "admin") {
-      return res
-        .status(403)
-        .json({ message: "Forbidden: Only admins can update movies" });
+      throw new AppError(403, "Forbidden: Only admins can update movies");
     }
 
     const { id } = req.params;
@@ -141,21 +169,27 @@ export const updateMovie = async (req: AuthRequest, res: Response) => {
       const updatedMovie = await Movie.findByPk(id);
       res.status(200).json(updatedMovie);
     } else {
-      res.status(404).json({ message: "Movie not found" });
+      throw new AppError(404, "Movie not found");
     }
-  } catch (error) {
-    logger.error({ error }, `Error updating movie with id ${req.params.id}:`);
-    res.status(500).json({ message: "Error updating movie", error });
+  } catch (error: any) {
+    logger.error({ error }, `Error updating movie with id ${req.params.id}`);
+    if (error.name === "SequelizeValidationError") {
+      return next(
+        new AppError(400, error.errors.map((e: any) => e.message).join(", "))
+      );
+    }
+    next(error);
   }
 };
 
-export const deleteMovie = async (req: AuthRequest, res: Response) => {
+export const deleteMovie = async (
+  req: AuthRequest,
+  res: Response,
+  next: NextFunction
+) => {
   try {
-    // Only admin users can delete movies
     if (req.user?.role !== "admin") {
-      return res
-        .status(403)
-        .json({ message: "Forbidden: Only admins can delete movies" });
+      throw new AppError(403, "Forbidden: Only admins can delete movies");
     }
 
     const { id } = req.params;
@@ -164,12 +198,12 @@ export const deleteMovie = async (req: AuthRequest, res: Response) => {
     });
 
     if (deletedRowCount) {
-      res.status(204).send(); // No Content
+      res.status(204).send();
     } else {
-      res.status(404).json({ message: "Movie not found" });
+      throw new AppError(404, "Movie not found");
     }
   } catch (error) {
-    logger.error({ error }, `Error deleting movie with id ${req.params.id}:`);
-    res.status(500).json({ message: "Error deleting movie", error });
+    logger.error({ error }, `Error deleting movie with id ${req.params.id}`);
+    next(error);
   }
 };

@@ -19,4 +19,7 @@ app.get("/metrics", async (req: Request, res: Response) => {
 
 app.use("/", moviesRoutes);
 
+import { errorHandler } from "./middleware/errorHandler";
+app.use(errorHandler);
+
 export default app;
