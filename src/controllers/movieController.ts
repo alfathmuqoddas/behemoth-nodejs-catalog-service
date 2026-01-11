@@ -1,4 +1,5 @@
-import { NextFunction, Request, Response } from "express";
+import { Request, Response } from "express";
+import catchAsync from "../utils/catchAsync";
 import axios from "axios";
 import Movie from "../models/Movies";
 import { AuthRequest } from "../middleware/authMiddleware";
@@ -6,65 +7,45 @@ import { AppError } from "../utils/AppError";
 import { moviesCreatedTotal } from "../config/metrics";
 import { Op } from "sequelize";
 
-export const getAllMovies = async (
-  req: Request,
-  res: Response,
-  next: NextFunction
-) => {
-  try {
-    const page = Math.max(1, parseInt(req.query.page as string) || 1);
-    const limit = Math.max(1, parseInt(req.query.size as string) || 10);
-    const title = req.query.title as string;
+export const getAllMovies = catchAsync(async (req: Request, res: Response) => {
+  const page = Math.max(1, parseInt(req.query.page as string) || 1);
+  const limit = Math.max(1, parseInt(req.query.size as string) || 10);
+  const title = req.query.title as string;
 
-    const offset = (page - 1) * limit;
+  const offset = (page - 1) * limit;
 
-    const whereClause: any = {};
-    if (title) {
-      whereClause.title = { [Op.iLike]: `%${title}%` };
-    }
-
-    const { count, rows } = await Movie.findAndCountAll({
-      limit,
-      offset,
-      where: whereClause,
-      order: [["createdAt", "DESC"]],
-    });
-
-    res.status(200).json({
-      totalItems: count,
-      totalPages: Math.ceil(count / limit),
-      currentPage: page,
-      pageSize: limit,
-      movies: rows,
-    });
-  } catch (error) {
-    next(error);
+  const whereClause: any = {};
+  if (title) {
+    whereClause.title = { [Op.iLike]: `%${title}%` };
   }
-};
 
-export const getMovieById = async (
-  req: Request,
-  res: Response,
-  next: NextFunction
-) => {
-  try {
-    const { id } = req.params;
-    const movie = await Movie.findByPk(id);
-    if (!movie) {
-      throw new AppError(404, "Movie not found");
-    }
-    res.status(200).json(movie);
-  } catch (error) {
-    next(error);
+  const { count, rows } = await Movie.findAndCountAll({
+    limit,
+    offset,
+    where: whereClause,
+    order: [["createdAt", "DESC"]],
+  });
+
+  res.status(200).json({
+    totalItems: count,
+    totalPages: Math.ceil(count / limit),
+    currentPage: page,
+    pageSize: limit,
+    movies: rows,
+  });
+});
+
+export const getMovieById = catchAsync(async (req: Request, res: Response) => {
+  const { id } = req.params;
+  const movie = await Movie.findByPk(id);
+  if (!movie) {
+    throw new AppError(404, "Movie not found");
   }
-};
+  res.status(200).json(movie);
+});
 
-export const createMovie = async (
-  req: AuthRequest,
-  res: Response,
-  next: NextFunction
-) => {
-  try {
+export const createMovie = catchAsync(
+  async (req: AuthRequest, res: Response) => {
     if (req.user?.role !== "admin") {
       throw new AppError(403, "Forbidden: Only admins can add movies");
     }
@@ -72,22 +53,11 @@ export const createMovie = async (
     const movie = await Movie.create(req.body);
     moviesCreatedTotal.inc({ source: "direct" });
     res.status(201).json(movie);
-  } catch (error: any) {
-    if (error.name === "SequelizeValidationError") {
-      return next(
-        new AppError(400, error.errors.map((e: any) => e.message).join(", "))
-      );
-    }
-    next(error);
   }
-};
+);
 
-export const createMovieByImdbId = async (
-  req: AuthRequest,
-  res: Response,
-  next: NextFunction
-) => {
-  try {
+export const createMovieByImdbId = catchAsync(
+  async (req: AuthRequest, res: Response) => {
     if (req.user?.role !== "admin") {
       throw new AppError(403, "Forbidden: Only admins can add movies");
     }
@@ -102,7 +72,7 @@ export const createMovieByImdbId = async (
     const apiKey = process.env.OMDB_API_KEY;
     if (!apiKey) throw new AppError(500, "OMDB API Key is not configured");
 
-    const url = `https://www.omdbapi.com/?apikey=${apiKey}&i=${imdbId}`;
+    const url = `https://www.omdbapi.com/?apikey=${apiKey}&i=${imdbId}&plot=full`;
 
     let omdbResponse;
     try {
@@ -139,22 +109,11 @@ export const createMovieByImdbId = async (
     moviesCreatedTotal.inc({ source: "imdb" });
 
     res.status(201).json(newMovie);
-  } catch (error: any) {
-    if (error.name === "SequelizeValidationError") {
-      return next(
-        new AppError(400, error.errors.map((e: any) => e.message).join(", "))
-      );
-    }
-    next(error);
   }
-};
+);
 
-export const updateMovie = async (
-  req: AuthRequest,
-  res: Response,
-  next: NextFunction
-) => {
-  try {
+export const updateMovie = catchAsync(
+  async (req: AuthRequest, res: Response) => {
     if (req.user?.role !== "admin") {
       throw new AppError(403, "Forbidden: Only admins can update movies");
     }
@@ -170,22 +129,11 @@ export const updateMovie = async (
     } else {
       throw new AppError(404, "Movie not found");
     }
-  } catch (error: any) {
-    if (error.name === "SequelizeValidationError") {
-      return next(
-        new AppError(400, error.errors.map((e: any) => e.message).join(", "))
-      );
-    }
-    next(error);
   }
-};
+);
 
-export const deleteMovie = async (
-  req: AuthRequest,
-  res: Response,
-  next: NextFunction
-) => {
-  try {
+export const deleteMovie = catchAsync(
+  async (req: AuthRequest, res: Response) => {
     if (req.user?.role !== "admin") {
       throw new AppError(403, "Forbidden: Only admins can delete movies");
     }
@@ -200,7 +148,5 @@ export const deleteMovie = async (
     } else {
       throw new AppError(404, "Movie not found");
     }
-  } catch (error) {
-    next(error);
   }
-};
+);
